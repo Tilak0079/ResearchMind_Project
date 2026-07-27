@@ -1,0 +1,39 @@
+# --- Web framework & API ---
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+websockets==13.1
+python-multipart==0.0.9
+
+# --- Agent orchestration ---
+langgraph==0.2.28
+langchain-core>=0.2.39,<0.4    # range, not pin — lets pip pick a version langgraph is happy with
+
+# --- Vector DB & embeddings ---
+qdrant-client==1.11.2
+fastembed==0.3.6
+
+# --- PDF parsing ---
+docling==2.4.0
+
+# --- Database ---
+sqlalchemy==2.0.35
+psycopg2-binary==2.9.9
+alembic==1.13.3
+
+# --- Cache / Queue ---
+redis==5.0.8
+celery==5.4.0
+
+# --- Object storage ---
+boto3==1.35.24          # S3-compatible client, works with MinIO too
+
+# --- Frontend ---
+streamlit==1.38.0
+
+# --- Config & utils ---
+python-dotenv==1.0.1
+pydantic==2.9.2
+pydantic-settings==2.5.2
+
+# --- PDF sanitization  ---
+pikepdf==9.3.0
