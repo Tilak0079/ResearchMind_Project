@@ -1,7 +1,5 @@
 """
-Input Guardrails (Section 4.1): three checks that run BEFORE a query
-reaches the RAG pipeline - protects the system itself (cost, injection,
-scope), not answer quality.
+Input Guardrails 
 """
 
 import logging
@@ -14,7 +12,7 @@ logger = logging.getLogger(__name__)
 TOKENIZER = tiktoken.get_encoding("cl100k_base")
 MAX_QUERY_TOKENS = 500  # reasonable cap for a single user question
 
-# Common prompt injection patterns - not exhaustive, but catches obvious attempts.
+# Common prompt injection patterns - 
 # Case-insensitive matching since attackers vary capitalization.
 INJECTION_PATTERNS = [
     r"ignore (all )?(previous|prior|above) instructions",
@@ -94,7 +92,7 @@ import pikepdf
 def sanitize_pdf(input_path: str, output_path: str) -> None:
     """
     Strips embedded JavaScript/macros from a PDF before it's parsed.
-    Applies to user-uploaded PDFs (Section 4.1) - papers from our own
+    Applies to user-uploaded PDFs - papers from  own
     local corpus or arXiv are already trusted sources, so this mainly
     protects against malicious user uploads.
 
