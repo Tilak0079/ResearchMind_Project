@@ -6,14 +6,25 @@ python-multipart==0.0.9
 
 # --- Agent orchestration ---
 langgraph==0.2.28
-langchain-core>=0.2.39,<0.4    # range, not pin — lets pip pick a version langgraph is happy with
+langchain-core>=0.2.39,<0.4    # range, not pin - lets pip pick a version langgraph is happy with
 
-# --- Vector DB & embeddings ---
+# --- Vector DB ---
 qdrant-client==1.11.2
-fastembed==0.3.6
 
 # --- PDF parsing ---
 docling==2.4.0
+
+# --- Tokenization (chunk sizing) ---
+tiktoken==0.8.0
+
+# --- Embeddings + Reranker (BAAI/bge-m3 + BGE-reranker-v2-m3, via official library) ---
+# NOTE: originally planned FastEmbed for embeddings, but FastEmbed does not
+# support bge-m3 in any version (confirmed by checking its full supported-
+# model list directly). Switched to FlagEmbedding (BGE-m3's own official
+# library) - it handles both embedding (Phase 6) and reranking (Phase 7).
+FlagEmbedding>=1.2.0
+huggingface_hub>=0.23,<1.0     # pinned down - FlagEmbedding wants 1.x but Docling needs <1.0
+pyarrow>=16.1.0,<17.0.0        # pinned down - Docling needs this range, FlagEmbedding's datasets dep pulls newer
 
 # --- Database ---
 sqlalchemy==2.0.35
@@ -35,5 +46,5 @@ python-dotenv==1.0.1
 pydantic==2.9.2
 pydantic-settings==2.5.2
 
-# --- PDF sanitization  ---
+# --- PDF sanitization (Phase 8) ---
 pikepdf==9.3.0
