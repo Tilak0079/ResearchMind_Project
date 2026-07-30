@@ -48,3 +48,10 @@ pydantic-settings==2.5.2
 
 # --- PDF sanitization (Phase 8) ---
 pikepdf==9.3.0
+
+# --- LLM client (talks to Ollama's OpenAI-compatible API) ---
+openai==1.51.0
+httpx==0.27.2    # pinned - newer httpx (0.28.x) removed a param openai 1.51.0 still expects
+
+# --- Frontend WebSocket client (talks to our own FastAPI WebSocket) ---
+websocket-client==1.8.0

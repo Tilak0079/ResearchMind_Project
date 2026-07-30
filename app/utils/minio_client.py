@@ -35,3 +35,55 @@ def ensure_bucket_exists(bucket_name: str) -> None:
     except ClientError:
         client.create_bucket(Bucket=bucket_name)
         logger.info(f"Created bucket '{bucket_name}'.")
+
+        
+def upload_pdf_to_minio(local_file_path: str, object_name: str) -> str:
+    """
+    Uploads a local PDF file to MinIO's raw-pdfs bucket.
+
+    Args:
+        local_file_path: path to the PDF currently on local disk.
+        object_name: the filename to use in MinIO (e.g. "1706.03762v7.pdf").
+
+    Returns:
+        The MinIO object path in "bucket/object_name" format - this is
+        what gets stored in paper_registry.raw_pdf_s3_path.
+
+    Raises:
+        ClientError: if the upload fails (bubbled up to caller).
+    """
+    client = get_minio_client()
+    bucket = settings.minio_bucket_raw_pdfs
+
+    client.upload_file(local_file_path, bucket, object_name)
+    logger.info(f"Uploaded {local_file_path} to MinIO: {bucket}/{object_name}")
+
+    return f"{bucket}/{object_name}"
+
+def upload_pdf(local_file_path: str, object_name: str) -> str:
+    """
+    Uploads a local PDF file to MinIO's raw-pdfs bucket.
+
+    Args:
+        local_file_path: path to the PDF currently sitting on local disk.
+        object_name: the filename to store it under in MinIO (e.g. "1706.03762v7.pdf").
+
+    Returns:
+        A MinIO-style path string (bucket/object_name) - this is what we'll
+        store in paper_registry.raw_pdf_s3_path, replacing local disk paths.
+
+    Raises:
+        FileNotFoundError: if the local file doesn't exist.
+        ClientError: if the upload fails (bubbled up from boto3).
+    """
+    from pathlib import Path
+    if not Path(local_file_path).exists():
+        raise FileNotFoundError(f"Cannot upload, file not found: {local_file_path}")
+
+    client = get_minio_client()
+    bucket = settings.minio_bucket_raw_pdfs
+
+    client.upload_file(local_file_path, bucket, object_name)
+    logger.info(f"Uploaded {local_file_path} -> {bucket}/{object_name}")
+
+    return f"{bucket}/{object_name}"        

@@ -3,7 +3,7 @@ Indexer: ties the full ingestion pipeline together.
 parse_pdf() -> chunk_document() -> embed_text() -> Qdrant + Postgres.
 
 This is what runs once per paper, whether from local corpus ingestion
-or the arXiv Fetcher Agent's background indexing step (Section 3.3).
+or the arXiv Fetcher Agent's background indexing step.
 """
 
 import logging
@@ -22,7 +22,13 @@ from app.retrieval.qdrant_client import ensure_collection_exists, get_qdrant_cli
 logger = logging.getLogger(__name__)
 
 
-def index_paper(file_path: str, paper_id: str, db: Session) -> int:
+def index_paper(
+    file_path: str,
+    paper_id: str,
+    db: Session,
+    trust_tier: str = "local_corpus",
+    arxiv_id: str | None = None,
+) -> int:
     """
     Runs the full ingestion pipeline for one PDF and indexes it.
 
@@ -32,11 +38,8 @@ def index_paper(file_path: str, paper_id: str, db: Session) -> int:
         db: active SQLAlchemy session, used to write chunk_registry rows.
 
     Returns:
-        Number of chunks successfully indexed.
+        Number of chunks successfully indexed
 
-    Raises:
-        FileNotFoundError: if the PDF doesn't exist (bubbled up from parse_pdf).
-        ValueError: if parsing produces no usable content.
     """
     ensure_collection_exists()
     qdrant = get_qdrant_client()
@@ -79,6 +82,8 @@ def index_paper(file_path: str, paper_id: str, db: Session) -> int:
                     "page_number": chunk.page_number,
                     "text": chunk.content,
                     "token_count": chunk.token_count,
+                    "trust_tier": trust_tier,
+                    "arxiv_id": arxiv_id,
                 },
             )
         )

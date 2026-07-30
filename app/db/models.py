@@ -33,6 +33,7 @@ class PaperRegistry(Base):
     arxiv_id = Column(String(32), unique=True)
     doi = Column(String(128))
     title = Column(Text, nullable=False)
+    abstract = Column(Text)
     authors = Column(JSONB)
     publication_date = Column(Date)
     source_type = Column(String(20))

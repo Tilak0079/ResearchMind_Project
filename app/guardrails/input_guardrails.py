@@ -56,21 +56,50 @@ def check_token_budget(query: str) -> tuple[bool, str]:
 
     return True, ""
 
+import json
+
+from app.generation.llm_client import generate_response
+
+SCOPE_CHECK_SYSTEM_PROMPT = """You are a scope classifier for an academic CS research assistant.
+Classify the user's query into exactly one category:
+- "academic_research": directly about CS/ML research, papers, or technical concepts
+- "adjacent_technical": general technical/programming questions, not research-specific but reasonable to answer
+- "out_of_scope": unrelated to research or technical topics (e.g. recipes, poems, personal advice)
+
+Respond ONLY with JSON: {"category": "<one of the three above>"}
+No other text."""
+
+
 def check_scope(query: str) -> tuple[bool, str]:
     """
-    Checks if the query is within academic/CS research scope.
+    Checks if the query is within academic/CS research scope (Section 4.1),
+    using Qwen 3 as a lightweight classifier.
 
+    Returns:
+        (is_safe, reason) - is_safe=False if the query is out_of_scope.
     """
-    logger.info("Scope check placeholder - always passing until Phase 12 LLM is available")
+    try:
+        raw_response = generate_response(SCOPE_CHECK_SYSTEM_PROMPT, query, temperature=0.0)
+        result = json.loads(raw_response.strip())
+        category = result.get("category", "out_of_scope")
+    except (json.JSONDecodeError, KeyError, Exception):
+        # If the LLM call fails or returns unparseable output, fail safe:
+        # log it and let the query through rather than blocking legitimate
+        # users due to a classifier hiccup (this is a soft guardrail, not
+        # a security-critical one like injection detection).
+        logger.exception("Scope check failed to parse LLM response, allowing query through")
+        return True, ""
+
+    if category == "out_of_scope":
+        logger.info(f"Query classified out_of_scope: '{query[:50]}'")
+        return False, "This question appears to be outside the academic/technical research scope of this assistant."
+
     return True, ""
 
 def run_input_guardrails(query: str) -> tuple[bool, str]:
     """
     Runs all input guardrails in sequence. Stops at the first failure
     (no point checking further if the query is already rejected).
-
-    Returns:
-        (is_safe, reason) - is_safe=False means the query should not proceed.
     """
     if not query or not query.strip():
         return False, "Query is empty."
@@ -83,8 +112,11 @@ def run_input_guardrails(query: str) -> tuple[bool, str]:
     if not is_safe:
         return False, reason
 
-    return True, ""
+    is_safe, reason = check_scope(query)
+    if not is_safe:
+        return False, reason
 
+    return True, ""
 
 import pikepdf
 
