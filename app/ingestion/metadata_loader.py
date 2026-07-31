@@ -1,7 +1,5 @@
 """
 Loads real paper metadata from JSON files (matching a PDF by filename)
-and maps it onto our paper_registry schema (Section 5.1), replacing the
-placeholder-guessed title/authors we've used since Phase 4.
 """
 
 import json
@@ -14,12 +12,8 @@ logger = logging.getLogger(__name__)
 
 def load_paper_metadata(json_path: str) -> dict:
     """
-    Reads one metadata JSON file and returns a dict ready to build a
-    PaperRegistry row.
+    Reads one metadata JSON file and returns a dict ready to build a PaperRegistry row.
 
-    Raises:
-        FileNotFoundError: if the JSON file doesn't exist.
-        json.JSONDecodeError: if the file isn't valid JSON.
     """
     path = Path(json_path)
     if not path.exists():

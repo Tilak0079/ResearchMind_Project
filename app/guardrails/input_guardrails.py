@@ -27,9 +27,7 @@ INJECTION_PATTERNS = [
 def check_prompt_injection(query: str) -> tuple[bool, str]:
     """
     Checks if the query contains obvious prompt injection attempts.
-
-    Returns:
-        (is_safe, reason) - is_safe=False means the query should be blocked.
+  
     """
     query_lower = query.lower()
 
@@ -45,8 +43,6 @@ def check_token_budget(query: str) -> tuple[bool, str]:
     """
     Checks if the query is within our token budget.
 
-    Returns:
-        (is_safe, reason) - is_safe=False means the query is too long.
     """
     token_count = len(TOKENIZER.encode(query))
 
@@ -72,11 +68,8 @@ No other text."""
 
 def check_scope(query: str) -> tuple[bool, str]:
     """
-    Checks if the query is within academic/CS research scope (Section 4.1),
-    using Qwen 3 as a lightweight classifier.
-
-    Returns:
-        (is_safe, reason) - is_safe=False if the query is out_of_scope.
+    Checks if the query is within academic/CS research scope 
+    using Qwen 3 
     """
     try:
         raw_response = generate_response(SCOPE_CHECK_SYSTEM_PROMPT, query, temperature=0.0)
@@ -99,7 +92,7 @@ def check_scope(query: str) -> tuple[bool, str]:
 def run_input_guardrails(query: str) -> tuple[bool, str]:
     """
     Runs all input guardrails in sequence. Stops at the first failure
-    (no point checking further if the query is already rejected).
+    
     """
     if not query or not query.strip():
         return False, "Query is empty."
@@ -125,11 +118,7 @@ def sanitize_pdf(input_path: str, output_path: str) -> None:
     """
     Strips embedded JavaScript/macros from a PDF before it's parsed.
     Applies to user-uploaded PDFs - papers from  own
-    local corpus or arXiv are already trusted sources, so this mainly
-    protects against malicious user uploads.
-
-    Raises:
-        pikepdf.PdfError: if the file is corrupted or not a valid PDF.
+    local corpus or arXiv are already trusted sources, so this mainly gto protects against malicious user uploads
     """
     with pikepdf.open(input_path) as pdf:
         # Remove the /OpenAction and /AA (Additional Actions) entries,

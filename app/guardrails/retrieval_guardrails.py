@@ -6,6 +6,9 @@ come back, BEFORE they're sent to the LLM for generation.
 """
 import tiktoken
 import logging
+import json
+
+from app.generation.llm_client import generate_response
 
 logger = logging.getLogger(__name__)
 
@@ -64,44 +67,34 @@ def truncate_context(reranked_results: list, max_tokens: int = MAX_CONTEXT_TOKEN
     return kept_results
 
 
-import json
 
-from app.generation.llm_client import generate_response
-from app.generation.prompts import RELEVANCE_GRADER_PROMPT_TEMPLATE
 
-RELEVANCE_GRADER_SYSTEM_PROMPT = "You are a strict relevance grading component. Follow the instructions exactly."
+
+
+# Reranker score threshold for relevance filtering. Chunks below this score
+# are dropped without an LLM call - the reranker (BGE-reranker-v2-m3) is
+# already a purpose-built cross-encoder for query-chunk relevance, so a
+# separate LLM-judge pass is redundant for our use case and adds significant
+# latency (each LLM call ~10-30s on M1 CPU/Metal - was 1-4+ min for a full
+# candidate set). Chosen deliberately over the LLM-judge approach described
+# in the architecture doc's Section 4.2 for latency reasons - see README's
+# "Key Engineering Decisions" section for the full reasoning.
+RELEVANCE_SCORE_THRESHOLD = 0.35
 
 
 def grade_relevance(query: str, reranked_results: list) -> list:
-    """
-    Document Relevance Grading (Section 4.2, exact prompt from Section 6.2):
-    checks each chunk against the query with an LLM judge, drops chunks
-    marked irrelevant before they reach generation.
-    """
-    graded_results = []
+    
+    graded_results = [
+        (point, score) for point, score in reranked_results
+        if score >= RELEVANCE_SCORE_THRESHOLD
+    ]
 
-    for point, score in reranked_results:
-        chunk_text = point.payload["text"]
-        user_prompt = RELEVANCE_GRADER_PROMPT_TEMPLATE.format(query=query, chunk_text=chunk_text)
-
-        try:
-            raw_response = generate_response(RELEVANCE_GRADER_SYSTEM_PROMPT, user_prompt, temperature=0.0)
-            result = json.loads(raw_response.strip())
-            is_relevant = result.get("relevant", True)
-        except (json.JSONDecodeError, KeyError, Exception):
-            # Fail safe: if grading fails, keep the chunk rather than losing
-            # potentially-useful context due to a parsing hiccup.
-            logger.exception(f"Relevance grading failed for a chunk, keeping it by default")
-            is_relevant = True
-
-        if is_relevant:
-            graded_results.append((point, score))
-        else:
-            logger.info(f"Chunk dropped as irrelevant: {point.payload['section_name']}")
+    dropped = len(reranked_results) - len(graded_results)
+    if dropped:
+        logger.info(f"Relevance filter (threshold={RELEVANCE_SCORE_THRESHOLD}): dropped {dropped} chunk(s)")
 
     logger.info(f"Relevance grading: {len(reranked_results)} -> {len(graded_results)} chunks kept")
     return graded_results
-
 
 CONSISTENCY_CHECK_SYSTEM_PROMPT = """You compare short text excerpts from different research papers for
 direct factual contradictions (not just different topics or phrasing - genuine conflicting claims).
@@ -110,24 +103,13 @@ Respond ONLY with JSON: {"has_contradiction": true|false, "note": "<one sentence
 
 
 def check_cross_paper_consistency(reranked_results: list) -> list:
-    """
-    Cross-Paper Consistency Check (Section 4.2): if chunks come from more
-    than one distinct paper, checks pairwise whether any directly contradict
-    each other, and attaches a note to the payload if so (surfaced later in
-    the generation step's Limitations section, per Section 6.1).
-
-    Only runs if 2+ distinct papers are present - skipped otherwise, since
-    a single-paper answer can't have cross-paper contradictions by definition.
-    """
+    
     distinct_paper_ids = {point.payload["paper_id"] for point, _ in reranked_results}
 
     if len(distinct_paper_ids) < 2:
         return reranked_results
 
-    # Simple approach: compare the top chunk from each distinct paper against
-    # each other (not every possible pair - keeps this fast and simple,
-    # per our "simple over clever" rule; a full pairwise check across many
-    # chunks would be slow and mostly redundant for a 5-8 chunk answer).
+   
     seen_papers: dict[str, tuple] = {}
     for point, score in reranked_results:
         paper_id = point.payload["paper_id"]

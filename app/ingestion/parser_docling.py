@@ -1,14 +1,6 @@
 """
-PDF parsing using Docling (Section 2.1 — single-library cascade).
-Converts a raw PDF into structured sections: headers, body text, tables,
-equations, figures — each carrying its real page number.
+PDF parsing using Docling
 
-NOTE: originally built by exporting Docling's output to markdown text and
-guessing section boundaries from '#'/'##' lines. That approach silently
-lost page number information. Rewritten to read Docling's own labeled
-text items directly (item.label, item.prov[0].page_no) instead - this
-is both more correct AND preserves real page numbers for citations
-(Section 6.1's citation format requires them).
 """
 
 import logging
@@ -22,8 +14,7 @@ from app.ingestion.schemas import ParsedDocument, ParsedSection
 
 logger = logging.getLogger(__name__)
 
-# OCR is disabled: our corpus is native-text arXiv PDFs (not scanned images),
-# per Section 2.1's Stage 0 format check.
+# OCR is disabled
 pipeline_options = PdfPipelineOptions()
 pipeline_options.do_ocr = False
 
@@ -42,13 +33,8 @@ SKIP_LABELS = {"page_header", "page_footer", "footnote"}
 
 def parse_pdf(file_path: str) -> ParsedDocument:
     """
-    Parses a PDF file into a ParsedDocument, reading Docling's structured
-    text items directly (not the flattened markdown export) so real page
-    numbers are preserved per section.
+    Parses a PDF file into a ParsedDocument, reading Docling's structured text items directly (not the flattened markdown export) so real page numbers are preserved per section.
 
-    Raises:
-        FileNotFoundError: if the PDF path doesn't exist.
-        ValueError: if Docling fails to produce any content (corrupt/unsupported PDF).
     """
     pdf_path = Path(file_path)
     if not pdf_path.exists():
@@ -78,11 +64,7 @@ def parse_pdf(file_path: str) -> ParsedDocument:
 
 def _build_sections_from_items(text_items: list) -> list[ParsedSection]:
     """
-    Groups Docling's labeled text items into sections, starting a new
-    section each time a 'section_header' or 'title' item appears.
-    Each section keeps the page number of its FIRST content item -
-    good enough for citation purposes, since our chunks (Phase 5) rarely
-    span more than 1-2 pages.
+    Groups Docling's labeled text items into sections
     """
     sections: list[ParsedSection] = []
     current_header = "Untitled"
