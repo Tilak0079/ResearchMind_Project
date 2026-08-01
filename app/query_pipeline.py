@@ -36,25 +36,24 @@ class QueryResult:
     sources: list = field(default_factory=list)
 
 
-def run_query_pipeline(query: str, db: Session) -> QueryResult:
+def run_query_pipeline(query: str, db: Session, session_id: str) -> QueryResult:
     """
     Runs the full pipeline for one user query, end to end.
-    This is the same sequence proven working across Phases 8-12's test
-    scripts, now consolidated into one function for the API layer to call.
+
     """
-    # Step 1: Input guardrails (Phase 8)
-    is_safe, reason = run_input_guardrails(query)
+    
+    is_safe, reason = run_input_guardrails(query, session_id)
     if not is_safe:
         logger.info(f"Query blocked by input guardrails: {reason}")
         return QueryResult(success=False, error_reason=reason)
 
-    # Step 2: Local retrieval + confidence scoring (Phase 7, 9)
+    # Step 2: Local retrieval + confidence scoring 
     query_embedding = embed_text(query)
     candidates = hybrid_search(query_embedding["dense"], query_embedding["sparse"], top_k=30)
     reranked = rerank_chunks(query, candidates, top_n=10)
     confidence = compute_confidence_score(reranked)
 
-    # Step 3: Routing decision (Phase 9)
+    # Step 3: Routing decision 
     if confidence < TAU_LOW:
         route = "arxiv_fetch_path"
     elif confidence >= TAU_HIGH:
@@ -64,7 +63,7 @@ def run_query_pipeline(query: str, db: Session) -> QueryResult:
 
     logger.info(f"Route: {route} (confidence={confidence:.3f})")
 
-    # Step 4: If confidence is too low, fetch from arXiv before answering (Phase 10)
+    # Step 4: If confidence is too low, fetch from arXiv before answering
     if route == "arxiv_fetch_path":
         try:
             fetch_and_index_from_arxiv(query, db, max_results=1)

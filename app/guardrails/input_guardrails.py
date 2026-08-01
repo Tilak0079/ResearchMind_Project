@@ -6,6 +6,7 @@ import logging
 import re
 
 import tiktoken
+from app.utils.redis_client import check_and_increment_token_quota
 
 logger = logging.getLogger(__name__)
 
@@ -39,16 +40,25 @@ def check_prompt_injection(query: str) -> tuple[bool, str]:
     return True, ""
 
 
-def check_token_budget(query: str) -> tuple[bool, str]:
+def check_token_budget(query: str, session_id: str) -> tuple[bool, str]:
     """
-    Checks if the query is within our token budget.
+    Checks if the query is within our token budget - both a hard cap on a single query's length, AND a rolling per-session quota tracked in Redis .
+
+    Args:
+        query: the user's question.
+        session_id: identifies which session's quota to check/update.
 
     """
     token_count = len(TOKENIZER.encode(query))
 
     if token_count > MAX_QUERY_TOKENS:
-        logger.warning(f"Query exceeds token budget: {token_count} > {MAX_QUERY_TOKENS}")
+        logger.warning(f"Query exceeds single-query token limit: {token_count} > {MAX_QUERY_TOKENS}")
         return False, f"Query is too long ({token_count} tokens, max {MAX_QUERY_TOKENS})."
+
+    is_within_quota, current_total = check_and_increment_token_quota(session_id, token_count)
+    if not is_within_quota:
+        logger.warning(f"Session {session_id} exceeded token quota: {current_total} tokens used")
+        return False, "You've reached your usage quota for this session. Please try again later."
 
     return True, ""
 
@@ -89,10 +99,9 @@ def check_scope(query: str) -> tuple[bool, str]:
 
     return True, ""
 
-def run_input_guardrails(query: str) -> tuple[bool, str]:
+def run_input_guardrails(query: str, session_id: str) -> tuple[bool, str]:
     """
-    Runs all input guardrails in sequence. Stops at the first failure
-    
+    Runs all input guardrails in sequence. Stops at the first failure (no point checking further if the query is already rejected).
     """
     if not query or not query.strip():
         return False, "Query is empty."
@@ -101,7 +110,7 @@ def run_input_guardrails(query: str) -> tuple[bool, str]:
     if not is_safe:
         return False, reason
 
-    is_safe, reason = check_token_budget(query)
+    is_safe, reason = check_token_budget(query, session_id)
     if not is_safe:
         return False, reason
 
@@ -110,7 +119,6 @@ def run_input_guardrails(query: str) -> tuple[bool, str]:
         return False, reason
 
     return True, ""
-
 import pikepdf
 
 

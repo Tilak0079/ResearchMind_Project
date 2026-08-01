@@ -1,14 +1,5 @@
 """
-Streamlit frontend (Section 1.2, 7.4): chat interface for the RAG assistant.
-Talks to our FastAPI REST endpoint (simpler than wiring up WebSocket
-streaming in Streamlit, which needs extra async handling - flagged below).
-
-NOTE: uses the REST endpoint (POST /api/v1/query), not the WebSocket
-streaming endpoint. Streamlit's execution model (re-running the whole
-script on each interaction) makes true WebSocket streaming significantly
-more complex to wire up correctly. Using REST means no live "typing"
-effect - the full answer appears at once after processing completes.
-This is a real, flagged simplification, not a silent shortcut.
+Streamlit frontend
 """
 
 import requests
@@ -17,12 +8,15 @@ import streamlit as st
 API_URL = "http://localhost:8000/api/v1/query"
 
 st.set_page_config(page_title="CS Research Assistant", page_icon="📄")
-st.title("📄 Agentic Hybrid-RAG Research Assistant")
+st.title("📄 ResearchMind-AI")
 
-# st.session_state persists across Streamlit's re-runs (unlike normal
-# Python variables, which would reset on every interaction).
+# st.session_state persists across Streamlit's re-runs.
 if "messages" not in st.session_state:
     st.session_state.messages = []
+
+if "session_id" not in st.session_state:
+    import uuid
+    st.session_state.session_id = str(uuid.uuid4())
 
 # Redraw the full chat history on every re-run (since Streamlit re-runs
 # top to bottom each time, we need to re-display everything each time).
@@ -40,7 +34,11 @@ if user_query:
     with st.chat_message("assistant"):
         with st.spinner("Thinking... (this may take 30-90 seconds)"):
             try:
-                response = requests.post(API_URL, json={"query": user_query}, timeout=600)
+                response = requests.post(
+    API_URL,
+    json={"query": user_query, "session_id": st.session_state.session_id},
+    timeout=600,
+)
                 response.raise_for_status()
                 data = response.json()
 

@@ -1,5 +1,5 @@
 """
-POST /api/v1/query (Section 7.2): the main REST endpoint for asking a
+POST /api/v1/query: the main REST endpoint for asking a
 question and getting a complete answer back (non-streaming).
 """
 
@@ -25,7 +25,7 @@ class QueryRequest(BaseModel):
 
 
 class QueryResponse(BaseModel):
-    """Response body schema, matching Section 7.2's structure (simplified)."""
+    """Response body schema."""
 
     session_id: str
     success: bool
@@ -41,17 +41,12 @@ def submit_query(request: QueryRequest, db: Session = Depends(get_db)) -> QueryR
     """
     Runs a user query through the full pipeline and returns the answer.
 
-    Note: not async here because our underlying pipeline functions
-    (embedding, LLM calls) are themselves synchronous - making this
-    route async wouldn't add real concurrency benefit without also
-    rewriting those lower-level functions as async, which is a larger
-    change we're deferring rather than doing partially/inconsistently.
     """
     session_id = request.session_id or str(uuid.uuid4())
 
     logger.info(f"[{session_id}] Query received: '{request.query[:80]}'")
 
-    result = run_query_pipeline(request.query, db)
+    result = run_query_pipeline(request.query, db, session_id)
 
     return QueryResponse(
         session_id=session_id,

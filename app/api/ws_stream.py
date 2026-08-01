@@ -1,19 +1,11 @@
 """
-WebSocket streaming endpoint (Section 7.4): sends status updates and the
-final answer back to the client as the pipeline progresses, instead of
-one single response at the end like the REST endpoint.
+WebSocket streaming endpoint: sends status updates and the
+final answer back to the client as the pipeline progresses, instead of one single response at the end like the REST endpoint.
 
-NOTE: true token-by-token streaming (Section 7.4's {"type": "token", ...}
-messages) requires the LLM client to support streaming responses -
-our current llm_client.py (Phase 12) requests a complete response at
-once. This is a real, flagged simplification: we send status updates
-as the pipeline progresses, then the FULL answer in one final message,
-rather than streaming individual words. Upgrading to true token
-streaming is a follow-up, not done silently here.
 """
 
 import logging
-
+import uuid
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.query_pipeline import run_query_pipeline
@@ -32,12 +24,13 @@ async def query_stream(websocket: WebSocket):
         while True:
             data = await websocket.receive_json()
             query = data.get("query", "")
+            session_id = data.get("session_id") or str(uuid.uuid4())
 
             await websocket.send_json({"type": "status", "stage": "processing", "detail": "Running guardrails and retrieval..."})
 
             db = SessionLocal()
             try:
-                result = run_query_pipeline(query, db)
+                result = run_query_pipeline(query, db, session_id)
             finally:
                 db.close()
 
