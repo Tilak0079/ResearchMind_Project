@@ -30,11 +30,9 @@ QUERY_REFORMULATION_SYSTEM_PROMPT = """Rewrite the user's question into a short,
 
 def reformulate_query_for_arxiv(user_query: str) -> str:
     """
-    Query Reformulation (Section 3.3, Step 1): rewrites a natural-language
+    Query Reformulation: rewrites a natural-language
     question into arXiv-search-friendly terms using the LLM.
 
-    Falls back to the raw query if the LLM call fails - a degraded search
-    is better than a broken pipeline here.
     """
     try:
         reformulated = generate_response(QUERY_REFORMULATION_SYSTEM_PROMPT, user_query, temperature=0.3)
@@ -70,8 +68,6 @@ def search_arxiv(query: str, max_results: int = 5) -> list[ArxivCandidate]:
     """
     Searches arXiv's public API for papers matching the query.
 
-    Raises:
-        requests.RequestException: if the arXiv API is unreachable.
     """
     params = {
         "search_query": f"all:{query}",
@@ -146,17 +142,9 @@ def filter_new_candidates(candidates: list[ArxivCandidate], db: Session) -> list
 
 def download_pdf(pdf_url: str, arxiv_id: str, download_dir: str = "tests/arxiv_downloads") -> tuple[str, str]:
     """
-    Downloads a PDF from arXiv to local disk, then uploads it to MinIO
-    for permanent storage (Section 1.1: MinIO handles raw PDF storage).
+    Downloads a PDF from arXiv to local disk, then uploads it to MinIO for permanent storage 
 
-    Returns:
-        A tuple: (local_file_path, minio_path). The local path is needed
-        temporarily because Docling (Phase 4) parses from a local file,
-        not directly from MinIO. The MinIO path is what gets saved
-        permanently in paper_registry.raw_pdf_s3_path.
 
-    Raises:
-        requests.RequestException: if the download fails.
     """
     Path(download_dir).mkdir(parents=True, exist_ok=True)
     local_path = f"{download_dir}/{arxiv_id}.pdf"
@@ -176,16 +164,8 @@ def download_pdf(pdf_url: str, arxiv_id: str, download_dir: str = "tests/arxiv_d
 
 def fetch_and_index_from_arxiv(query: str, db: Session, max_results: int = 3) -> list[str]:
     """
-    Full arXiv fetch loop (Section 3.3, Steps 1-6):
+    Full arXiv fetch loop :
     search -> filter duplicates -> download -> parse -> chunk -> embed -> index.
-
-    Args:
-        query: user's search query (used as-is for now - see module docstring).
-        db: active SQLAlchemy session.
-        max_results: how many arXiv candidates to consider.
-
-    Returns:
-        List of paper_ids that were successfully indexed.
     """
     search_query = reformulate_query_for_arxiv(query)
     candidates = search_arxiv(search_query, max_results=max_results)
@@ -217,7 +197,7 @@ def fetch_and_index_from_arxiv(query: str, db: Session, max_results: int = 3) ->
             authors=candidate.authors,
             publication_date=candidate.published_date,
             source_type="arxiv_fetched",
-            trust_tier="unverified",
+            trust_tier="fetched",
             abstract=candidate.summary,
             ingestion_status="indexing",
             raw_pdf_s3_path=minio_pdf_path,

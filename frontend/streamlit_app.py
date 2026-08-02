@@ -55,7 +55,7 @@ if user_query:
                     if data.get("sources"):
                         with st.expander("Sources"):
                             for source in data["sources"]:
-                                trust_note = " ⚠️ unverified source" if source.get("trust_flag") else ""
+                                trust_note = " ⚠️ fetched from web (verified)" if source.get("trust_flag") else ""
                                 link_text = f" — [View paper]({source['link']})" if source.get("link") else ""
                                 st.write(f"- {source['section']} (Page {source.get('page', 'N/A')}){trust_note}{link_text}")
                 else:

@@ -25,6 +25,7 @@ _client = OpenAI(
 )
 
 
+
 def generate_response(system_prompt: str, user_message: str, temperature: float = 0.3) -> str:
     """
     Sends a chat request to our locally-running Qwen model.

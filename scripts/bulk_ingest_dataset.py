@@ -19,9 +19,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # EDIT THESE TWO PATHS to match your actual folders:
-PDF_FOLDER = "/Users/tilakpatel/Downloads/data/pdfs"
-JSON_FOLDER = "/Users/tilakpatel/Downloads/data/metadata"
-
+PDF_FOLDER = "local_dataset/pdfs"
+JSON_FOLDER = "local_dataset/metadata"
 
 def bulk_ingest():
     db = SessionLocal()
@@ -71,7 +70,7 @@ def bulk_ingest():
                 authors=metadata["authors"],
                 publication_date=metadata["publication_date"],
                 source_type=metadata["source_type"],
-                trust_tier=metadata["trust_tier"],
+                trust_tier="local_corpus",  # override JSON's value - manually curated papers are trusted,
                 abstract=metadata["abstract"],
                 ingestion_status="indexing",
                 raw_pdf_s3_path=minio_path,

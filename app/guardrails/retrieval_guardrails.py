@@ -19,15 +19,12 @@ def apply_trust_filter(reranked_results: list) -> list:
     unverified-source chunks, just tags them so the generation step can
     flag them in the Limitations section .
 
-    Returns:
-        The same list, with each item's payload annotated with
-        'trust_flag' (True if the source needs a Limitations note).
     """
     flagged_count = 0
 
     for point, _score in reranked_results:
-        trust_tier = point.payload.get("trust_tier", "unverified")
-        needs_flag = trust_tier == "unverified"
+        trust_tier = point.payload.get("trust_tier", "fetched")
+        needs_flag = trust_tier != "local_corpus"
         point.payload["trust_flag"] = needs_flag
 
         if needs_flag:
@@ -96,20 +93,27 @@ def grade_relevance(query: str, reranked_results: list) -> list:
     logger.info(f"Relevance grading: {len(reranked_results)} -> {len(graded_results)} chunks kept")
     return graded_results
 
-CONSISTENCY_CHECK_SYSTEM_PROMPT = """You compare short text excerpts from different research papers for
-direct factual contradictions (not just different topics or phrasing - genuine conflicting claims).
 
-Respond ONLY with JSON: {"has_contradiction": true|false, "note": "<one sentence, empty string if false>"}"""
+CONSISTENCY_CHECK_SYSTEM_PROMPT = """You compare short excerpts from different research papers for direct
+factual contradictions (not just different topics or phrasing - genuine conflicting claims).
+
+You will be given multiple excerpts, each labeled with an index. Respond ONLY with JSON:
+{"contradictions": [{"indices": [0, 2], "note": "<one sentence>"}]}
+If there are no contradictions, respond: {"contradictions": []}"""
 
 
 def check_cross_paper_consistency(reranked_results: list) -> list:
-    
+    """
+    Cross-Paper Consistency Check : if chunks come from more
+    than one distinct paper, checks whether any directly contradict each
+    other, using ONE batched LLM call instead of a pairwise loop.
+
+    """
     distinct_paper_ids = {point.payload["paper_id"] for point, _ in reranked_results}
 
     if len(distinct_paper_ids) < 2:
         return reranked_results
 
-   
     seen_papers: dict[str, tuple] = {}
     for point, score in reranked_results:
         paper_id = point.payload["paper_id"]
@@ -118,23 +122,26 @@ def check_cross_paper_consistency(reranked_results: list) -> list:
 
     representative_chunks = list(seen_papers.values())
 
-    for i in range(len(representative_chunks)):
-        for j in range(i + 1, len(representative_chunks)):
-            chunk_a = representative_chunks[i][0].payload["text"]
-            chunk_b = representative_chunks[j][0].payload["text"]
+    excerpts_text = "\n\n".join(
+        f"[{i}] {chunk[0].payload['text']}" for i, chunk in enumerate(representative_chunks)
+    )
 
-            user_prompt = f"EXCERPT A:\n{chunk_a}\n\nEXCERPT B:\n{chunk_b}"
+    try:
+        raw_response = generate_response(CONSISTENCY_CHECK_SYSTEM_PROMPT, excerpts_text, temperature=0.0)
+        result = json.loads(raw_response.strip())
+        contradictions = result.get("contradictions", [])
 
-            try:
-                raw_response = generate_response(CONSISTENCY_CHECK_SYSTEM_PROMPT, user_prompt, temperature=0.0)
-                result = json.loads(raw_response.strip())
-                if result.get("has_contradiction"):
-                    note = result.get("note", "Potential contradiction detected between sources.")
-                    representative_chunks[i][0].payload["consistency_note"] = note
-                    representative_chunks[j][0].payload["consistency_note"] = note
-                    logger.info(f"Contradiction flagged: {note}")
-            except (json.JSONDecodeError, KeyError, Exception):
-                logger.exception("Consistency check failed for a chunk pair, skipping")
+        for contradiction in contradictions:
+            indices = contradiction.get("indices", [])
+            note = contradiction.get("note", "Potential contradiction detected between sources.")
+            for idx in indices:
+                if 0 <= idx < len(representative_chunks):
+                    representative_chunks[idx][0].payload["consistency_note"] = note
+            if indices:
+                logger.info(f"Contradiction flagged between excerpts {indices}: {note}")
+
+    except (json.JSONDecodeError, KeyError, Exception):
+        logger.exception("Cross-paper consistency check failed, skipping")
 
     return reranked_results
 

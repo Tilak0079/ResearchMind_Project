@@ -19,3 +19,5 @@ postgres_data/
 
 # OS
 .DS_Store
+
+local_dataset/

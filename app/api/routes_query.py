@@ -6,6 +6,7 @@ question and getting a complete answer back (non-streaming).
 import logging
 import uuid
 
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
