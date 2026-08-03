@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     
     # Caching
     redis_cache_ttl: int = 3600
+    
+    # Conversation
+    chat_history_limit: int = 6
 
     @property
     def postgres_url(self) -> str:

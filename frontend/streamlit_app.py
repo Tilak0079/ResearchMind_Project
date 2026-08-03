@@ -16,8 +16,14 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 if "session_id" not in st.session_state:
-    import uuid
     st.session_state.session_id = str(uuid.uuid4())
+
+with st.sidebar:
+    st.markdown("### Controls")
+    if st.button("➕ New Chat"):
+        st.session_state.messages = []
+        st.session_state.session_id = str(uuid.uuid4())
+        st.rerun()
 
 # Redraw the full chat history on every re-run (since Streamlit re-runs
 # top to bottom each time, we need to re-display everything each time).

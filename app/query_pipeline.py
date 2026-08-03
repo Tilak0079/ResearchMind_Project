@@ -48,15 +48,44 @@ def run_query_pipeline(query: str, db: Session, session_id: str) -> QueryRespons
     is_safe, reason = run_input_guardrails(query, session_id)
     if not is_safe:
         logger.info(f"Query blocked by input guardrails: {reason}")
-        return QueryResult(success=False, error_reason=reason)
+        from app.api.schemas import QueryResponse
+        return QueryResponse(
+            session_id=session_id,
+            success=False,
+            error_reason=reason,
+            query=query
+        )
 
-    # Check cache first
-    cached_response = get_cached_response(query)
-    if cached_response:
-        # Update the session_id to match the current user's request
-        cached_response.session_id = session_id
-        cached_response.metadata["cached"] = True
-        return cached_response
+    from app.db.models import Message as DBMessage
+    from app.config import settings
+
+    # Retrieve conversation history
+    history_records = (
+        db.query(DBMessage)
+        .filter(DBMessage.session_id == session_id)
+        .order_by(DBMessage.created_at.desc())
+        .limit(settings.chat_history_limit)
+        .all()
+    )
+    # Reverse to chronological order
+    history_records.reverse()
+    
+    # Format history
+    history_blocks = []
+    for msg in history_records:
+        role_label = "User" if msg.role == "user" else "Assistant"
+        history_blocks.append(f"{role_label}:\n{msg.content}")
+        
+    formatted_history = "\n\n".join(history_blocks)
+
+    # Check cache first (bypass if there is conversation history)
+    if not formatted_history:
+        cached_response = get_cached_response(query)
+        if cached_response:
+            # Update the session_id to match the current user's request
+            cached_response.session_id = session_id
+            cached_response.metadata["cached"] = True
+            return cached_response
 
     # Step 2: Local retrieval + confidence scoring 
     query_embedding = embed_text(query)
@@ -107,7 +136,7 @@ def run_query_pipeline(query: str, db: Session, session_id: str) -> QueryRespons
 
     # Step 6: Generation (Phase 12)
     context = assemble_context(final_chunks)
-    user_message = build_user_message(query, context)
+    user_message = build_user_message(query, context, formatted_history)
     
     from pydantic import BaseModel, Field, ValidationError
 
@@ -227,7 +256,19 @@ def run_query_pipeline(query: str, db: Session, session_id: str) -> QueryRespons
         metadata={"cached": False}
     )
 
-    # Store successful response in cache
-    set_cached_response(query, final_response)
+    # Store successful response in cache only if no history was used
+    if not formatted_history:
+        set_cached_response(query, final_response)
+        
+    # Store messages in PostgreSQL for session history
+    try:
+        user_msg = DBMessage(session_id=session_id, role="user", content=query)
+        asst_msg = DBMessage(session_id=session_id, role="assistant", content=final_response.answer)
+        db.add(user_msg)
+        db.add(asst_msg)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Failed to persist messages for session {session_id}: {e}")
 
     return final_response

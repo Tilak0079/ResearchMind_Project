@@ -26,8 +26,21 @@ def submit_query(request: QueryRequest, db: Session = Depends(get_db)) -> QueryR
     Runs a user query through the full pipeline and returns the answer.
 
     """
-    session_id = request.session_id or str(uuid.uuid4())
-
+    session_id = request.session_id
+    
+    from app.db.models import Session as DBSession
+    
+    if session_id:
+        # Verify or create the requested session
+        existing = db.query(DBSession).filter(DBSession.session_id == session_id).first()
+        if not existing:
+            db.add(DBSession(session_id=session_id))
+            db.commit()
+    else:
+        # Create a new session
+        session_id = str(uuid.uuid4())
+        db.add(DBSession(session_id=session_id))
+        db.commit()
     logger.info(f"[{session_id}] Query received: '{request.query[:80]}'")
 
     result = run_query_pipeline(request.query, db, session_id)
