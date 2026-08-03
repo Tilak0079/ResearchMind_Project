@@ -69,6 +69,7 @@ class ChunkRegistry(Base):
     part_index = Column(Integer, server_default="0")  # set when a section exceeds the token cap
     token_count = Column(Integer)
     vector_db_id = Column(String(64))  # pointer to the Qdrant point ID
+    artifact_path = Column(Text, nullable=True) # path to minio object or generic artifact identifier
     content_hash = Column(String(64))
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
 

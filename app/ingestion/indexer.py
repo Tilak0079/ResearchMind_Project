@@ -46,7 +46,7 @@ def index_paper(
 
     logger.info(f"Starting indexing for paper_id={paper_id}, file={file_path}")
 
-    parsed_doc = parse_pdf(file_path)
+    parsed_doc = parse_pdf(file_path, paper_id)
     chunks = chunk_document(parsed_doc, paper_id)
 
     if not chunks:
@@ -66,6 +66,22 @@ def index_paper(
 
         vector_point_id = str(uuid.uuid4())
 
+        payload = {
+            "chunk_id": chunk.chunk_id,
+            "paper_id": paper_id,
+            "section_name": chunk.section_name,
+            "chunk_type": chunk.chunk_type,
+            "part_index": chunk.part_index,
+            "page_number": chunk.page_number,
+            "text": chunk.content,
+            "token_count": chunk.token_count,
+            "trust_tier": trust_tier,
+            "arxiv_id": arxiv_id,
+        }
+        
+        if chunk.artifact_path:
+            payload["artifact_path"] = chunk.artifact_path
+
         points.append(
             PointStruct(
                 id=vector_point_id,
@@ -73,18 +89,7 @@ def index_paper(
                     "dense": embedding["dense"],
                     "sparse": embedding["sparse"],
                 },
-                payload={
-                    "chunk_id": chunk.chunk_id,
-                    "paper_id": paper_id,
-                    "section_name": chunk.section_name,
-                    "chunk_type": chunk.chunk_type,
-                    "part_index": chunk.part_index,
-                    "page_number": chunk.page_number,
-                    "text": chunk.content,
-                    "token_count": chunk.token_count,
-                    "trust_tier": trust_tier,
-                    "arxiv_id": arxiv_id,
-                },
+                payload=payload,
             )
         )
 
@@ -99,6 +104,7 @@ def index_paper(
             part_index=chunk.part_index,
             token_count=chunk.token_count,
             vector_db_id=vector_point_id,
+            artifact_path=chunk.artifact_path,
         )
         db.add(db_chunk)
 

@@ -49,7 +49,25 @@ def chunk_document(doc: ParsedDocument, paper_id: str) -> list[Chunk]:
         section_chunks = _chunk_section(section, paper_id)
         all_chunks.extend(section_chunks)
 
-    logger.info(f"Chunked '{doc.title}' into {len(all_chunks)} chunks from {len(doc.sections)} sections")
+    # Process extracted artifacts
+    if hasattr(doc, "artifacts") and doc.artifacts:
+        for artifact in doc.artifacts:
+            token_count = count_tokens(artifact.content)
+            all_chunks.append(
+                Chunk(
+                    chunk_id=str(uuid.uuid4()),
+                    paper_id=paper_id,
+                    chunk_type=artifact.artifact_type,
+                    section_name=f"{artifact.artifact_type.capitalize()} on page {artifact.page_number or 'N/A'}",
+                    content=artifact.content,
+                    part_index=0,
+                    page_number=artifact.page_number,
+                    token_count=token_count,
+                    artifact_path=artifact.artifact_path,
+                )
+            )
+
+    logger.info(f"Chunked '{doc.title}' into {len(all_chunks)} chunks from {len(doc.sections)} sections and {len(getattr(doc, 'artifacts', []))} artifacts")
     return all_chunks
 
 

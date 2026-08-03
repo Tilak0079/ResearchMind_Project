@@ -18,10 +18,11 @@ def assemble_context(reranked_results: list) -> str:
     for point, _score in reranked_results:
         payload = point.payload
         trust_note = " [trust_tier: unverified]" if payload.get("trust_flag") else ""
+        artifact_note = f" [Artifact ID: {payload['artifact_path']}]" if payload.get("artifact_path") else ""
 
         block = (
             f"[Section {payload['section_name']}, Page {payload.get('page_number', 'N/A')}]"
-            f"{trust_note}\n"
+            f"{trust_note}{artifact_note}\n"
             f"{payload['text']}"
         )
         blocks.append(block)

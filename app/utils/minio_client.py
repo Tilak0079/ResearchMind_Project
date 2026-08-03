@@ -86,4 +86,37 @@ def upload_pdf(local_file_path: str, object_name: str) -> str:
     client.upload_file(local_file_path, bucket, object_name)
     logger.info(f"Uploaded {local_file_path} -> {bucket}/{object_name}")
 
-    return f"{bucket}/{object_name}"        
+    return f"{bucket}/{object_name}"
+
+def upload_bytes_to_minio(data: bytes, object_name: str, bucket_name: str, content_type: str = "application/octet-stream") -> str:
+    """
+    Uploads raw bytes to MinIO.
+    """
+    import io
+    ensure_bucket_exists(bucket_name)
+    client = get_minio_client()
+    
+    client.upload_fileobj(
+        io.BytesIO(data), 
+        bucket_name, 
+        object_name,
+        ExtraArgs={"ContentType": content_type}
+    )
+    logger.info(f"Uploaded bytes -> {bucket_name}/{object_name}")
+    return f"{bucket_name}/{object_name}"
+
+def get_presigned_url(bucket_name: str, object_name: str, expires_in: int = 3600) -> str:
+    """
+    Generates a pre-signed URL for an object.
+    """
+    client = get_minio_client()
+    try:
+        url = client.generate_presigned_url(
+            'get_object',
+            Params={'Bucket': bucket_name, 'Key': object_name},
+            ExpiresIn=expires_in
+        )
+        return url
+    except ClientError as e:
+        logger.error(f"Failed to generate presigned URL for {bucket_name}/{object_name}: {e}")
+        return ""        

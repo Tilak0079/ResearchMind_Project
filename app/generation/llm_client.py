@@ -26,7 +26,17 @@ _client = OpenAI(
 
 
 
-def generate_response(system_prompt: str, user_message: str, temperature: float = 0.3) -> str:
+from typing import Any, TypeVar, Optional, Type
+from pydantic import BaseModel
+
+T = TypeVar('T', bound=BaseModel)
+
+def generate_response(
+    system_prompt: str, 
+    user_message: str, 
+    temperature: float = 0.3,
+    response_format: Optional[Type[T]] = None
+) -> str | T:
     """
     Sends a chat request to our locally-running Qwen model.
 
@@ -36,9 +46,10 @@ def generate_response(system_prompt: str, user_message: str, temperature: float 
         temperature: randomness of output (0 = deterministic, 1 = creative).
                      Kept low (0.3) since we want consistent, grounded answers,
                      not creative writing.
+        response_format: Optional Pydantic model class for structured outputs.
 
     Returns:
-        The model's text response.
+        The model's text response, or a parsed Pydantic object if response_format is provided.
 
     Raises:
         Exception: bubbled up if Ollama is unreachable or errors out - caller
@@ -46,13 +57,24 @@ def generate_response(system_prompt: str, user_message: str, temperature: float 
     """
     logger.info(f"Sending request to {settings.llm_model_name}")
 
-    response = _client.chat.completions.create(
-        model=settings.llm_model_name,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message},
-        ],
-        temperature=temperature,
-    )
-
-    return response.choices[0].message.content
+    if response_format is not None:
+        response = _client.beta.chat.completions.parse(
+            model=settings.llm_model_name,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            temperature=temperature,
+            response_format=response_format,
+        )
+        return response.choices[0].message.parsed
+    else:
+        response = _client.chat.completions.create(
+            model=settings.llm_model_name,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_message},
+            ],
+            temperature=temperature,
+        )
+        return response.choices[0].message.content

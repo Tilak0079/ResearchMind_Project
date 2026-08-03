@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     tau_high: float
     tau_low: float
     log_level: str
+    
+    # Caching
+    redis_cache_ttl: int = 3600
 
     @property
     def postgres_url(self) -> str:
