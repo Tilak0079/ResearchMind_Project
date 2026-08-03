@@ -29,6 +29,8 @@ class Session(Base):
 
     session_id = Column(UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
     title = Column(String(255), nullable=True)
+    mode = Column(String(20), server_default="research", nullable=False)
+    paper_id = Column(UUID(as_uuid=True), ForeignKey("paper_registry.paper_id", ondelete="SET NULL"), nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now())
 

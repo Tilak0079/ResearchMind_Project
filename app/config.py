@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     # LLM
     llm_base_url: str
     llm_model_name: str
+    llm_max_tokens: int = 8192
 
     # App
     tau_high: float

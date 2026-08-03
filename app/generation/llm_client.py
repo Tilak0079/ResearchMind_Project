@@ -65,6 +65,7 @@ def generate_response(
                 {"role": "user", "content": user_message},
             ],
             temperature=temperature,
+            max_tokens=settings.llm_max_tokens,
             response_format=response_format,
         )
         return response.choices[0].message.parsed
@@ -76,5 +77,6 @@ def generate_response(
                 {"role": "user", "content": user_message},
             ],
             temperature=temperature,
+            max_tokens=settings.llm_max_tokens,
         )
         return response.choices[0].message.content

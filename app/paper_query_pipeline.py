@@ -1,8 +1,6 @@
 """
-Core query pipeline: ties together every phase we've built into one
-reusable function - input guardrails -> router -> retrieval -> retrieval
-guardrails -> generation. Both the REST endpoint and WebSocket handler
-(Phase 13) call this same function, so pipeline logic lives in ONE place.
+Core query pipeline for Paper Q&A Mode.
+Strictly restricted to answering from a single paper using pre-indexed Qdrant vectors.
 """
 
 import logging
@@ -10,46 +8,29 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
-from app.agent.arxiv_fetcher import fetch_and_index_from_arxiv
-from app.agent.confidence_scorer import TAU_HIGH, TAU_LOW, compute_confidence_score
+from app.agent.confidence_scorer import compute_confidence_score
 from app.generation.context_assembler import assemble_context, build_user_message
 from app.generation.llm_client import generate_response
-from app.generation.prompts import GENERATION_SYSTEM_PROMPT
+from app.generation.prompts import PAPER_MODE_SYSTEM_PROMPT
 from app.guardrails.input_guardrails import run_input_guardrails
 from app.guardrails.retrieval_guardrails import run_retrieval_guardrails
 from app.ingestion.embedder import embed_text
 from app.retrieval.qdrant_client import hybrid_search
 from app.retrieval.reranker import rerank_chunks
-from app.utils.cache import get_cached_response, set_cached_response
 
 logger = logging.getLogger(__name__)
 
+from app.api.schemas_paper import PaperQueryResponse
+from app.api.schemas import Citation, Evidence, ArtifactMetadataModel, ConfidenceDetail
 
-@dataclass
-class QueryResult:
-    """Everything the API layer needs to build a response (Section 7.2's schema)."""
-
-    success: bool
-    route_taken: str = ""
-    confidence_score: float = 0.0
-    answer: str = ""
-    error_reason: str = ""
-    sources: list = field(default_factory=list)
-
-
-from app.api.schemas import QueryResponse
-
-def run_query_pipeline(query: str, db: Session, session_id: str) -> QueryResponse:
+def run_paper_query_pipeline(query: str, db: Session, session_id: str, paper_id: str) -> PaperQueryResponse:
     """
-    Runs the full pipeline for one user query, end to end.
-
+    Runs the pipeline for Paper Q&A Mode.
     """
-    
     is_safe, reason = run_input_guardrails(query, session_id)
     if not is_safe:
         logger.info(f"Query blocked by input guardrails: {reason}")
-        from app.api.schemas import QueryResponse
-        return QueryResponse(
+        return PaperQueryResponse(
             session_id=session_id,
             success=False,
             error_reason=reason,
@@ -78,55 +59,23 @@ def run_query_pipeline(query: str, db: Session, session_id: str) -> QueryRespons
         
     formatted_history = "\n\n".join(history_blocks)
 
-    # Check cache first (bypass if there is conversation history)
-    if not formatted_history:
-        cached_response = get_cached_response(query)
-        if cached_response:
-            # Update the session_id to match the current user's request
-            cached_response.session_id = session_id
-            cached_response.metadata["cached"] = True
-            return cached_response
-
-    # Step 2: Local retrieval + confidence scoring 
+    # Step 2: Retrieval restricted to paper_id
     query_embedding = embed_text(query)
-    candidates = hybrid_search(query_embedding["dense"], query_embedding["sparse"], top_k=30)
+    candidates = hybrid_search(query_embedding["dense"], query_embedding["sparse"], top_k=30, paper_id=paper_id)
     reranked = rerank_chunks(query, candidates, top_n=10)
     confidence = compute_confidence_score(reranked)
 
-    # Step 3: Routing decision 
-    if confidence < TAU_LOW:
-        route = "arxiv_fetch_path"
-    elif confidence >= TAU_HIGH:
-        route = "local_only_path"
-    else:
-        route = "hybrid_path"
+    logger.info(f"Paper Mode Retrieval: (confidence={confidence:.3f})")
 
-    logger.info(f"Route: {route} (confidence={confidence:.3f})")
-
-    # Step 4: If confidence is too low, fetch from arXiv before answering
-    if route == "arxiv_fetch_path":
-        try:
-            fetch_and_index_from_arxiv(query, db, max_results=1)
-            # Re-run retrieval now that we may have new data indexed
-            candidates = hybrid_search(query_embedding["dense"], query_embedding["sparse"], top_k=30)
-            reranked = rerank_chunks(query, candidates, top_n=10)
-        except Exception:
-            # arXiv fetch failing shouldn't crash the whole query - fall back
-            # to whatever local results we already had.
-            logger.exception("arXiv fetch failed, continuing with existing local results")
-
-    # Step 5: Retrieval guardrails (Phase 11)
+    # Step 5: Retrieval guardrails (Optional but good to keep for quality)
     final_chunks = run_retrieval_guardrails(query, reranked)
 
-    from app.api.schemas import QueryResponse, Citation, Evidence, ArtifactMetadataModel, ConfidenceDetail
-    
     if not final_chunks:
-        return QueryResponse(
+        return PaperQueryResponse(
             session_id=session_id,
             success=True,
-            route_taken=route,
             query=query,
-            answer="I couldn't find sufficient evidence in the retrieved papers to answer this confidently.",
+            answer="This paper does not discuss this topic.",
             confidence=ConfidenceDetail(
                 overall_confidence=confidence,
                 explanation="No relevant chunks passed the retrieval guardrails.",
@@ -134,7 +83,7 @@ def run_query_pipeline(query: str, db: Session, session_id: str) -> QueryRespons
             )
         )
 
-    # Step 6: Generation (Phase 12)
+    # Step 6: Generation
     context = assemble_context(final_chunks)
     user_message = build_user_message(query, context, formatted_history)
     
@@ -145,11 +94,11 @@ def run_query_pipeline(query: str, db: Session, session_id: str) -> QueryRespons
     has_native_artifact = any(chunk.payload.get("artifact_path") for chunk, score in final_chunks)
     request_multiple_artifacts = bool(re.search(r'\b(all|multiple|every)\s+(figures?|tables?|diagrams?|images?)\b', query.lower()))
     
-    system_prompt = GENERATION_SYSTEM_PROMPT
+    system_prompt = PAPER_MODE_SYSTEM_PROMPT
     if needs_diagram and not has_native_artifact:
         system_prompt += "\n\nCRITICAL INSTRUCTION: The user requires a visual explanation, but no native figures were retrieved. You MUST generate a structured Mermaid diagram (enclosed in ```mermaid) to represent this concept visually. Embed the Mermaid diagram strictly inside your natural language `answer` field using \\n for newlines so the JSON remains valid. Ensure the diagram is strictly conceptual and 100% grounded in the retrieved context. Do not invent details."
     
-    from pydantic import BaseModel, Field, ValidationError
+    from pydantic import BaseModel, Field
 
     class LLMResponse(BaseModel):
         answer: str = Field(default="", description="The primary natural language response")
@@ -160,26 +109,21 @@ def run_query_pipeline(query: str, db: Session, session_id: str) -> QueryRespons
         confidence: dict = Field(default_factory=dict)
 
     try:
-        # Request native structured output
         llm_response_obj = generate_response(system_prompt, user_message, response_format=LLMResponse)
         llm_data = llm_response_obj.model_dump()
     except Exception as e:
         logger.warning(f"Failed to generate structured LLM response on first attempt: {e}. Retrying with stricter prompt.")
-        
-        # Retry once with stricter prompt (still using structured output request)
-        stricter_prompt = GENERATION_SYSTEM_PROMPT + "\n\nCRITICAL: You failed to output valid JSON previously. You MUST output ONLY raw JSON matching the schema."
+        stricter_prompt = PAPER_MODE_SYSTEM_PROMPT + "\n\nCRITICAL: You failed to output valid JSON previously. You MUST output ONLY raw JSON matching the schema."
         try:
             llm_response_retry = generate_response(stricter_prompt, user_message, response_format=LLMResponse)
             llm_data = llm_response_retry.model_dump()
         except Exception as retry_e:
             logger.exception(f"Failed to generate structured LLM response on retry: {retry_e}")
-            
-            # Since .parse() failed entirely, attempt one last fallback without response_format to get ANY text
             try:
                 fallback_text = generate_response(stricter_prompt, user_message)
             except Exception:
                 fallback_text = "The system encountered an error formatting the response, but relevant documents were found."
-                
+            
             llm_data = {
                 "answer": fallback_text,
                 "summary": [],
@@ -193,7 +137,6 @@ def run_query_pipeline(query: str, db: Session, session_id: str) -> QueryRespons
             }
 
     from app.utils.minio_client import get_presigned_url
-    from app.config import settings
     
     citations = []
     evidence = []
@@ -206,18 +149,16 @@ def run_query_pipeline(query: str, db: Session, session_id: str) -> QueryRespons
         arxiv_id = payload.get("arxiv_id")
         paper_url = f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else None
         
-        # Add Evidence
         evidence.append(Evidence(
-            paper=arxiv_id,
+            paper=arxiv_id or paper_id,
             page=payload.get("page_number"),
             chunk_text=payload.get("text", ""),
             similarity_score=score,
-            reranker_score=score # Assuming score here is from the reranker in final_chunks
+            reranker_score=score
         ))
         
-        # Add Citation
         citations.append(Citation(
-            title=arxiv_id, # Using arxiv_id as title since we don't store full title in Qdrant currently
+            title=arxiv_id or "Selected Paper",
             page=payload.get("page_number"),
             section=payload["section_name"],
             trust_tier=payload.get("trust_tier"),
@@ -225,7 +166,6 @@ def run_query_pipeline(query: str, db: Session, session_id: str) -> QueryRespons
             url=paper_url
         ))
         
-        # Add Artifact (only if it was selected by the LLM)
         if payload.get("artifact_path") and payload["artifact_path"] in relevant_artifact_ids:
             bucket = settings.minio_bucket_figures
             object_name = payload["artifact_path"]
@@ -240,7 +180,7 @@ def run_query_pipeline(query: str, db: Session, session_id: str) -> QueryRespons
                 type=payload.get("chunk_type", "unknown"),
                 title=payload["section_name"],
                 page=payload.get("page_number"),
-                paper=arxiv_id,
+                paper=arxiv_id or paper_id,
                 url=artifact_url,
                 content=payload.get("text", "")
             ))
@@ -251,10 +191,9 @@ def run_query_pipeline(query: str, db: Session, session_id: str) -> QueryRespons
             
     confidence_data = llm_data.get("confidence", {})
             
-    final_response = QueryResponse(
+    final_response = PaperQueryResponse(
         session_id=session_id,
         success=True,
-        route_taken=route,
         query=query,
         answer=llm_data.get("answer", ""),
         summary=llm_data.get("summary", []),
@@ -268,14 +207,9 @@ def run_query_pipeline(query: str, db: Session, session_id: str) -> QueryRespons
         artifacts=artifacts,
         citations=citations,
         evidence=evidence,
-        metadata={"cached": False}
+        metadata={}
     )
 
-    # Store successful response in cache only if no history was used
-    if not formatted_history:
-        set_cached_response(query, final_response)
-        
-    # Store messages in PostgreSQL for session history
     try:
         user_msg = DBMessage(session_id=session_id, role="user", content=query)
         asst_msg = DBMessage(session_id=session_id, role="assistant", content=final_response.answer)

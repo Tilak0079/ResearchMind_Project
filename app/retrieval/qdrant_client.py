@@ -4,7 +4,7 @@ Collection uses BGE-m3's native dense (1024-dim) + sparse vectors.
 """
 
 import logging
-from qdrant_client.models import FusionQuery, Fusion, Prefetch, SparseVector
+from qdrant_client.models import FusionQuery, Fusion, Prefetch, SparseVector, Filter, FieldCondition, MatchValue
 
 from qdrant_client import QdrantClient
 from qdrant_client.models import (
@@ -51,20 +51,33 @@ def ensure_collection_exists() -> None:
 
 
 
-def hybrid_search(dense_vector: list[float], sparse_vector: dict, top_k: int = 30) -> list:
+def hybrid_search(dense_vector: list[float], sparse_vector: dict, top_k: int = 30, paper_id: str | None = None) -> list:
     """
     Runs a hybrid search: dense + sparse vectors combined via RRF fusion.
+    Optionally restricts search to a specific paper_id.
     """
     client = get_qdrant_client()
+    
+    query_filter = None
+    if paper_id:
+        query_filter = Filter(
+            must=[
+                FieldCondition(
+                    key="paper_id",
+                    match=MatchValue(value=paper_id)
+                )
+            ]
+        )
 
     results = client.query_points(
         collection_name=settings.qdrant_collection_name,
         prefetch=[
-            Prefetch(query=dense_vector, using="dense", limit=top_k),
+            Prefetch(query=dense_vector, using="dense", limit=top_k, filter=query_filter),
             Prefetch(
                 query=SparseVector(indices=sparse_vector["indices"], values=sparse_vector["values"]),
                 using="sparse",
                 limit=top_k,
+                filter=query_filter
             ),
         ],
         query=FusionQuery(fusion=Fusion.RRF),

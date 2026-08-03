@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from app.api.routes_query import router as query_router
 from app.api.ws_stream import router as ws_router
+from app.api.routes_paper import router as paper_router
 
 logging.basicConfig(level=logging.INFO)
 
@@ -16,6 +17,7 @@ app = FastAPI(title="Agentic Hybrid-RAG CS Research Assistant")
 
 app.include_router(query_router)
 app.include_router(ws_router)
+app.include_router(paper_router)
 
 
 @app.get("/health")
